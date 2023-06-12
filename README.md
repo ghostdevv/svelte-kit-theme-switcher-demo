@@ -1,38 +1,99 @@
-# create-svelte
+# Svelte Kit Theme Switcher Demo
 
-Everything you need to build a Svelte project, powered by [`create-svelte`](https://github.com/sveltejs/kit/tree/master/packages/create-svelte).
+Simple theme switcher demo for svelte kit, supports SSR. Run this repo locally to play around with it, or setup using the files below.
 
-## Creating a project
+## lib/themes.ts
 
-If you're seeing this, you've probably already done this step. Congrats!
+```ts
+export type Theme = 'light' | 'dark' | undefined;
 
-```bash
-# create a new project in the current directory
-npm create svelte@latest
+export function getDefaultTheme(): Theme {
+	const { matches } = window.matchMedia('(prefers-color-scheme: dark)');
+	return matches ? 'dark' : 'light';
+}
 
-# create a new project in my-app
-npm create svelte@latest my-app
+export function isValidTheme(string: any): string is Theme {
+	return ['light', 'dark', undefined].includes(string);
+}
 ```
 
-## Developing
+## lib/ThemeSwitcher.svelte
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+```html
+<script lang="ts">
+	import { getDefaultTheme, type Theme } from '$lib/themes';
+	import { browser } from '$app/environment';
+	import { page } from '$app/stores';
+	import cookies from 'js-cookie';
 
-```bash
-npm run dev
+	let theme: Theme = $page.data.theme;
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+	$: if (browser) {
+		if (theme) {
+			cookies.set('theme', theme, { path: '/' });
+			document.documentElement.dataset.theme = theme;
+		} else {
+			cookies.remove('theme', { path: '/' });
+			document.documentElement.dataset.theme = getDefaultTheme();
+		}
+	}
+</script>
+
+<select bind:value={theme}>
+	<option selected={theme == undefined} value={undefined}>Auto</option>
+	<option selected={theme == 'light'} value="light">Light</option>
+	<option selected={theme == 'dark'} value="dark">Dark</option>
+</select>
 ```
 
-## Building
+## hooks.server.ts
 
-To create a production version of your app:
+```ts
+import { isValidTheme } from '$lib/themes';
 
-```bash
-npm run build
+export async function handle({ event, resolve }) {
+	const cookieTheme = event.cookies.get('theme');
+
+	event.locals.theme = isValidTheme(cookieTheme) ? cookieTheme : undefined;
+
+	return await resolve(event, {
+		transformPageChunk({ html }) {
+			if (event.locals.theme) {
+				html = html.replace('%sveltekit.theme%', event.locals.theme);
+			}
+
+			return html;
+		},
+	});
+}
 ```
 
-You can preview the production build with `npm run preview`.
+## +layout.server.ts
 
-> To deploy your app, you may need to install an [adapter](https://kit.svelte.dev/docs/adapters) for your target environment.
+```ts
+export async function load({ locals }) {
+	return {
+		theme: locals.theme,
+	};
+}
+```
+
+## app.d.ts
+
+```ts
+import type { Theme } from '$lib/themes';
+
+declare global {
+	namespace App {
+		interface Locals {
+			theme: Theme;
+		}
+	}
+}
+
+export {};
+```
+
+## app.html
+
+Add `data-theme="%sveltekit.theme%"` to your `<html>` tag.
